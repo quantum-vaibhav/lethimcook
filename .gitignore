@@ -1,0 +1,9 @@
+# the song is downloaded per-machine by setup.py — don't redistribute it
+thinking-song.mp3
+
+# python
+__pycache__/
+*.pyc
+
+# claude code local state
+.claude/settings.local.json
