@@ -27,6 +27,7 @@ TMP = tempfile.gettempdir()
 STATE_FILE = os.path.join(TMP, "claude-thinking-song.state")
 HEARTBEAT_FILE = os.path.join(TMP, "claude-thinking-song.heartbeat")
 LOCK_FILE = os.path.join(TMP, "claude-thinking-song.lock")
+STOP_FLAG_FILE = os.path.join(TMP, "claude-thinking-song.stopped")
 
 PROJECT_ROOT = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -70,6 +71,10 @@ def read_state():
             return f.read().strip()
     except OSError:
         return "pause"
+
+
+def stop_flag_set():
+    return os.path.exists(STOP_FLAG_FILE)
 
 
 def acquire_lock():
@@ -127,7 +132,9 @@ def main():
             if state == "quit":
                 break
 
-            if state == "play":
+            # Hard-stop flag overrides state: hooks are async, so a stray
+            # `play` can be written after a stop — never resume past it.
+            if state == "play" and not stop_flag_set():
                 if not started:
                     pygame.mixer.music.play(loops=-1)  # play full, loop on finish
                     started = True
