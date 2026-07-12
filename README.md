@@ -127,6 +127,47 @@ python -m yt_dlp -x --audio-format mp3 -o "thinking-song.%(ext)s" <url>
 python scripts/hook.py quit
 ```
 
+## 🌐 beyond claude code (cowork & web chat)
+
+the daemon doesn't care who's cooking — `player.py` is a shared audio engine,
+and anything that can hit a localhost endpoint can drive it.
+
+| surface | how it's wired | status |
+|---|---|:---:|
+| 🖥️ claude code | lifecycle hooks (`setup.py` installs them) | ✅ automatic |
+| 🤝 cowork (claude desktop) | same harness, same `~/.claude/settings.json` hooks | ✅ automatic* |
+| 💬 claude.ai web chat | userscript + local bridge (below) | ✅ automatic |
+| 🧩 anything else | call the bridge yourself (`curl` counts) | 🎛️ manual |
+
+<sub>*cowork runs on the claude code harness and reads the same settings file,
+so the normal setup covers it. if your cowork build doesn't fire hooks, use
+the bridge below as the fallback.</sub>
+
+**the bridge** — a tiny localhost-only http server (stdlib, zero deps) that
+translates requests into the exact same play/pause actions the hooks use:
+
+```bash
+python scripts/bridge.py        # listens on http://127.0.0.1:48765
+```
+
+endpoints: `/play` `/resume` `/pause` `/stop` `/quit` `/status` — same
+semantics as the hooks (`/stop` is a hard stop: nothing resumes until the
+next `/play`). it binds `127.0.0.1` only and answers web pages only if they
+come from `claude.ai`, so neither your network nor random websites can
+mess with your music.
+
+**web chat** — install [`extras/claude-chat.user.js`](extras/claude-chat.user.js)
+in tampermonkey/violentmonkey, start the bridge, open claude.ai. the script
+watches the streaming indicator: claude starts generating → music plays;
+response finishes → hard stop. that's the whole wiring.
+
+**manual mode** — no hooks, no userscript, no problem:
+
+```bash
+curl -X POST http://127.0.0.1:48765/play    # let him cook
+curl -X POST http://127.0.0.1:48765/stop    # dinner's served
+```
+
 ## 🗑️ uninstall (why would you though)
 
 delete the hook entries tagged `"statusMessage": "lethimcook"` from
