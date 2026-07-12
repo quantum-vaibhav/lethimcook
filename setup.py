@@ -146,13 +146,13 @@ def install_hooks():
     strip_our_hooks(hooks)
 
     events = {
-        "UserPromptSubmit": "play",     # prompt sent -> Claude starts thinking
-        "PostToolUse": "play",          # resume after tool ran (e.g. permission approved)
-        "PostToolUseFailure": "play",   # resume after a failed tool - Claude keeps thinking
-        "PermissionDenied": "play",     # resume after user denies - Claude keeps thinking
-        "Notification": "pause",        # Claude is waiting for the user
-        "Stop": "pause",                # turn finished
-        "SessionEnd": "pause",          # session closed
+        "UserPromptSubmit": "play",     # prompt sent -> Claude starts thinking (lifts hard stop)
+        "PostToolUse": "resume",        # resume after tool ran - suppressed after a hard stop
+        "PostToolUseFailure": "resume", # resume after a failed tool - Claude keeps thinking
+        "PermissionDenied": "resume",   # resume after user denies - Claude keeps thinking
+        "Notification": "pause",        # Claude is waiting for the user (resumable)
+        "Stop": "stop",                 # turn finished/interrupted - hard stop until next prompt
+        "SessionEnd": "stop",           # session closed - hard stop until next prompt
     }
     for event, action in events.items():
         hooks.setdefault(event, []).append({"hooks": [make_hook(action)]})

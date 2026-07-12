@@ -91,13 +91,17 @@ two tiny scripts, zero background clutter:
 
 | claude code event | action | translation |
 |---|:---:|---|
-| `UserPromptSubmit` | ▶️ | you said something, claude's cooking |
-| `PostToolUse` | ▶️ | tool finished, still cooking |
+| `UserPromptSubmit` | ▶️ | you said something, claude's cooking (lifts a hard stop) |
+| `PostToolUse` | ▶️ | tool finished, still cooking (ignored after a hard stop) |
 | `PostToolUseFailure` | ▶️ | tool flopped, claude's coping + cooking |
 | `PermissionDenied` | ▶️ | you said no, claude's pivoting |
 | `Notification` | ⏸️ | claude needs you. pick up the phone |
-| `Stop` | ⏸️ | claude's done. silence. |
-| `SessionEnd` | ⏸️ | you left. it noticed. |
+| `Stop` | 🛑 | claude's done. **hard stop** — stays silent until you prompt again |
+| `SessionEnd` | 🛑 | you left. it noticed. hard stop too |
+
+hooks fire async and out of order, so a straggler `PostToolUse` used to sneak in
+*after* `Stop` and un-pause the music. now `Stop`/`SessionEnd` drop a hard-stop
+flag that mutes every resume attempt — only your next prompt lifts it.
 
 </details>
 
