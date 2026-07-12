@@ -1,4 +1,4 @@
-"""Claude Code hook entry point: `python hook.py play|resume|pause|stop|quit`.
+"""Claude Code hook entry point: `python hook.py play|resume|pause|stop|quit|on|off`.
 
 Writes the desired state to a temp file that player.py polls. On `play`,
 spawns the player daemon (detached, hidden) if none is running. Must stay
@@ -11,10 +11,14 @@ Actions:
     stop    turn ended / interrupted (Stop, SessionEnd) — hard stop: stray
             `resume` events are suppressed until the next `play`
     quit    kill the daemon
+    off     temporary disable: sets "enabled": false in config.json and
+            silences the music; the install stays intact
+    on      re-enable after `off`; music returns on the next play/resume
 
 The hard-stop flag exists because hooks are async and unordered: a trailing
 PostToolUse can land *after* Stop and would otherwise flip the music back on.
 """
+import json
 import os
 import subprocess
 import sys
@@ -25,6 +29,33 @@ TMP = tempfile.gettempdir()
 STATE_FILE = os.path.join(TMP, "claude-thinking-song.state")
 HEARTBEAT_FILE = os.path.join(TMP, "claude-thinking-song.heartbeat")
 STOP_FLAG_FILE = os.path.join(TMP, "claude-thinking-song.stopped")
+
+PROJECT_ROOT = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+)
+CONFIG_FILE = os.path.join(PROJECT_ROOT, "config.json")
+DEFAULT_CONFIG = {"volume": 100, "enabled": True}
+
+
+def load_config():
+    try:
+        # utf-8-sig tolerates a BOM from Windows editors like Notepad
+        with open(CONFIG_FILE, encoding="utf-8-sig") as f:
+            config = json.load(f)
+        return config if isinstance(config, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def music_enabled():
+    return bool(load_config().get("enabled", True))
+
+
+def set_enabled(value):
+    config = load_config() or dict(DEFAULT_CONFIG)
+    config["enabled"] = value
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
 
 
 def heartbeat_fresh():
@@ -76,6 +107,14 @@ def main(action=None):
     if action is None:
         action = sys.argv[1] if len(sys.argv) > 1 else "pause"
 
+    if action == "off":
+        set_enabled(False)
+        write_state("pause")  # silence now; the daemon stays installed
+        return
+    if action == "on":
+        set_enabled(True)
+        return  # music returns on the next play/resume event
+
     if action == "play":
         # Explicit user intent: lifts a hard stop.
         clear_stop_flag()
@@ -86,6 +125,9 @@ def main(action=None):
         if stop_flag_set():
             return  # user stopped this turn; ignore stray mid-turn events
         action = "play"
+
+    if action == "play" and not music_enabled():
+        action = "pause"  # temporarily disabled: stay quiet, spawn nothing
 
     write_state(action)
 

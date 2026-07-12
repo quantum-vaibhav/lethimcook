@@ -28,6 +28,7 @@ class BridgeTests(unittest.TestCase):
         hook.STATE_FILE = os.path.join(self.tmp, "state")
         hook.HEARTBEAT_FILE = os.path.join(self.tmp, "heartbeat")
         hook.STOP_FLAG_FILE = os.path.join(self.tmp, "stopped")
+        hook.CONFIG_FILE = os.path.join(self.tmp, "config.json")
         hook.spawn_player = lambda: None  # never launch a real daemon in tests
 
         self.server = ThreadingHTTPServer((bridge.HOST, 0), bridge.BridgeHandler)
@@ -72,13 +73,13 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(self.state(), "pause")
         code, _, body = self.call("status", method="GET")
         self.assertEqual(code, 200)
-        self.assertEqual(body, {"state": "pause", "stopped": True})
+        self.assertEqual(body, {"state": "pause", "stopped": True, "enabled": True})
 
     def test_play_lifts_hard_stop(self):
         self.call("stop")
         self.call("play")
         _, _, body = self.call("status", method="GET")
-        self.assertEqual(body, {"state": "play", "stopped": False})
+        self.assertEqual(body, {"state": "play", "stopped": False, "enabled": True})
 
     def test_unknown_action_is_404_and_writes_nothing(self):
         code, _, body = self.call("selfdestruct")
