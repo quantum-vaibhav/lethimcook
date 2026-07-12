@@ -105,6 +105,24 @@ flag that mutes every resume attempt — only your next prompt lifts it.
 
 </details>
 
+## 🖱️ prefer buttons? the control panel
+
+not a terminal person? there's a little window for all of this — play/pause,
+mute, volume, change song, install, and uninstall — no commands required.
+
+| your machine | do this |
+|:---:|:---|
+| 🪟 windows | double-click **`controls.bat`** |
+| 🍎 macos / 🐧 linux | `bash controls.sh` |
+| 🐍 any | `python scripts/gui.py` |
+
+it polls the daemon once a second, so the buttons always show what the music
+is *actually* doing — even if a Claude Code session or the CLI changed it.
+built on plain tkinter (ships with python), so there's nothing extra to install.
+
+<sub>everything below still works from the command line — the panel just calls
+the same actions.</sub>
+
 ## 🎛️ make it yours
 
 **volume** — edit `config.json`, applies **live** while the music plays (yes, really):
@@ -234,7 +252,7 @@ PRs welcome. ideas that would go hard:
 
 - 🎚️ different songs for different hook events (boss music for `PostToolUseFailure`?)
 - 🔀 playlist folder support
-- 🍎 menu-bar / tray controls
+- 🍎 a proper system-tray icon (the [control panel](#-prefer-buttons-the-control-panel) is here — a real menu-bar/tray version would go even harder)
 - 🎮 konami code easter egg (we'll figure out where)
 
 ---
