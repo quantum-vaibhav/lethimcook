@@ -39,11 +39,21 @@ CONFIG_FILE = os.path.join(PROJECT_ROOT, "config.json")
 def read_volume():
     """Volume from config.json as 0.0-1.0. Accepts "volume": 0-100."""
     try:
-        with open(CONFIG_FILE, encoding="utf-8") as f:
+        # utf-8-sig tolerates a BOM from Windows editors like Notepad
+        with open(CONFIG_FILE, encoding="utf-8-sig") as f:
             percent = float(json.load(f).get("volume", DEFAULT_VOLUME))
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, AttributeError):
         percent = DEFAULT_VOLUME
     return max(0.0, min(100.0, percent)) / 100.0
+
+
+def read_enabled():
+    """The "enabled" flag from config.json; missing/invalid means enabled."""
+    try:
+        with open(CONFIG_FILE, encoding="utf-8-sig") as f:
+            return bool(json.load(f).get("enabled", True))
+    except (OSError, ValueError, AttributeError):
+        return True
 
 
 def config_mtime():
@@ -114,6 +124,7 @@ def main():
         pygame.mixer.music.load(SONG)
         pygame.mixer.music.set_volume(read_volume())
         last_config_mtime = config_mtime()
+        enabled = read_enabled()
 
         started = False
         playing = False
@@ -126,6 +137,7 @@ def main():
             if mtime != last_config_mtime:
                 last_config_mtime = mtime
                 pygame.mixer.music.set_volume(read_volume())
+                enabled = read_enabled()
 
             state = read_state()
 
@@ -134,7 +146,9 @@ def main():
 
             # Hard-stop flag overrides state: hooks are async, so a stray
             # `play` can be written after a stop — never resume past it.
-            if state == "play" and not stop_flag_set():
+            # The config "enabled" flag applies live, like volume, so
+            # `hook.py off` (or editing config.json) silences within a poll.
+            if state == "play" and enabled and not stop_flag_set():
                 if not started:
                     pygame.mixer.music.play(loops=-1)  # play full, loop on finish
                     started = True

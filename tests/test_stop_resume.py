@@ -70,8 +70,8 @@ class TempFilesMixin(unittest.TestCase):
             mod.STATE_FILE = os.path.join(self.tmp, "state")
             mod.HEARTBEAT_FILE = os.path.join(self.tmp, "heartbeat")
             mod.STOP_FLAG_FILE = os.path.join(self.tmp, "stopped")
+            mod.CONFIG_FILE = os.path.join(self.tmp, "config.json")
         player.LOCK_FILE = os.path.join(self.tmp, "lock")
-        player.CONFIG_FILE = os.path.join(self.tmp, "config.json")
         player.SONG = os.path.join(self.tmp, "song.mp3")
         with open(player.SONG, "w") as f:
             f.write("not a real mp3")

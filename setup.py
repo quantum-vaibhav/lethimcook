@@ -5,12 +5,20 @@
 2. Downloads the song via yt-dlp if thinking-song.mp3 is missing.
 3. Merges the hooks into ~/.claude/settings.json with absolute paths
    for THIS machine (removing any hooks from a previous install).
+
+`python setup.py --uninstall` reverses it: removes the hooks, shuts the
+music daemon down, and deletes the temp state/lock/heartbeat files.
+Idempotent - safe to run even if nothing is installed.
 """
+import argparse
 import json
 import os
 import shutil
 import subprocess
 import sys
+import time
+
+DAEMON_EXIT_TIMEOUT = 5  # seconds to wait for the daemon to honor "quit"
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SONG = os.path.join(ROOT, "thinking-song.mp3")
@@ -126,16 +134,20 @@ def make_hook(action):
     }
 
 
+def claude_settings_path():
+    return os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
+
+
 def install_hooks():
     step("Registering hooks in ~/.claude/settings.json...")
-    claude_dir = os.path.join(os.path.expanduser("~"), ".claude")
-    os.makedirs(claude_dir, exist_ok=True)
-    settings_path = os.path.join(claude_dir, "settings.json")
+    settings_path = claude_settings_path()
+    os.makedirs(os.path.dirname(settings_path), exist_ok=True)
 
     settings = {}
     if os.path.exists(settings_path):
         try:
-            with open(settings_path, encoding="utf-8") as f:
+            # utf-8-sig tolerates a BOM from Windows editors like Notepad
+            with open(settings_path, encoding="utf-8-sig") as f:
                 settings = json.load(f)
         except (ValueError, OSError):
             fail("Existing %s is not valid JSON - fix or delete it, then rerun." % settings_path)
@@ -162,10 +174,82 @@ def install_hooks():
     print("    Hooks installed (python: %s)" % sys.executable)
 
 
+def remove_hooks():
+    step("Removing lethimcook hooks from ~/.claude/settings.json...")
+    settings_path = claude_settings_path()
+    if not os.path.exists(settings_path):
+        print("    No settings file - nothing to remove.")
+        return
+    try:
+        # utf-8-sig tolerates a BOM from Windows editors like Notepad
+        with open(settings_path, encoding="utf-8-sig") as f:
+            settings = json.load(f)
+    except (ValueError, OSError):
+        fail("Existing %s is not valid JSON - fix or delete it, then rerun." % settings_path)
+    shutil.copy2(settings_path, settings_path + ".bak")
+    print("    Backed up current settings to settings.json.bak")
+
+    hooks = settings.get("hooks")
+    if isinstance(hooks, dict):
+        strip_our_hooks(hooks)
+        if not hooks:
+            del settings["hooks"]  # leave zero residue
+
+    with open(settings_path, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2)
+    print("    Hooks removed. Everything else in your settings is untouched.")
+
+
+def stop_daemon_and_clean():
+    step("Stopping the music daemon and cleaning temp files...")
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import hook
+    import player
+
+    if os.path.exists(hook.HEARTBEAT_FILE):
+        hook.main("quit")  # daemon polls 5x/sec and exits on "quit"
+        deadline = time.time() + DAEMON_EXIT_TIMEOUT
+        while time.time() < deadline and os.path.exists(hook.HEARTBEAT_FILE):
+            time.sleep(0.1)
+
+    leftovers = 0
+    for path in (hook.STATE_FILE, hook.HEARTBEAT_FILE, hook.STOP_FLAG_FILE, player.LOCK_FILE):
+        try:
+            os.remove(path)
+            leftovers += 1
+        except OSError:
+            pass
+    print("    Daemon stopped; %d temp file(s) removed." % leftovers)
+
+
+def uninstall():
+    print("lethimcook uninstall - kicking him out of the kitchen")
+    print("=" * 50)
+    remove_hooks()
+    stop_daemon_and_clean()
+    print("\n" + "=" * 50)
+    print("Uninstalled. Restart Claude Code to drop the hooks, then")
+    print("delete this folder whenever you like. No hard feelings.")
+
+
 def main():
+    parser = argparse.ArgumentParser(
+        description="lethimcook setup - theme music while Claude cooks"
+    )
+    parser.add_argument(
+        "--uninstall", action="store_true",
+        help="remove the hooks, stop the daemon, and clean up temp files",
+    )
+    args = parser.parse_args()
+
+    ensure_python_version()
+
+    if args.uninstall:
+        uninstall()
+        return
+
     print("lethimcook setup - theme music while Claude cooks")
     print("=" * 50)
-    ensure_python_version()
     ensure_pygame()
     ensure_song()
     install_hooks()

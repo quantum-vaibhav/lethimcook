@@ -121,6 +121,17 @@ your thinking music can be phonk, boccherini, or the seinfeld theme. we don't ju
 python -m yt_dlp -x --audio-format mp3 -o "thinking-song.%(ext)s" <url>
 ```
 
+**mute button** — need silence for a bit, but keep it installed? flip it off
+(and back on) anytime — no reinstall, applies live even mid-song:
+
+```bash
+python scripts/hook.py off    # soundtrack off (sets "enabled": false in config.json)
+python scripts/hook.py on     # soundtrack back on at the next prompt
+```
+
+<sub>editing `"enabled"` in `config.json` by hand does the same thing —
+the player checks it live, just like volume.</sub>
+
 **panic button** — music stuck? get him out of the kitchen:
 
 ```bash
@@ -150,9 +161,9 @@ translates requests into the exact same play/pause actions the hooks use:
 python scripts/bridge.py        # listens on http://127.0.0.1:48765
 ```
 
-endpoints: `/play` `/resume` `/pause` `/stop` `/quit` `/status` — same
-semantics as the hooks (`/stop` is a hard stop: nothing resumes until the
-next `/play`). it binds `127.0.0.1` only and answers web pages only if they
+endpoints: `/play` `/resume` `/pause` `/stop` `/quit` `/on` `/off` `/status`
+— same semantics as the hooks (`/stop` is a hard stop: nothing resumes until
+the next `/play`; `/off` and `/on` flip the temporary-disable toggle). it binds `127.0.0.1` only and answers web pages only if they
 come from `claude.ai`, so neither your network nor random websites can
 mess with your music.
 
@@ -170,9 +181,22 @@ curl -X POST http://127.0.0.1:48765/stop    # dinner's served
 
 ## 🗑️ uninstall (why would you though)
 
-delete the hook entries tagged `"statusMessage": "lethimcook"` from
-`~/.claude/settings.json` (or use `/hooks` inside claude code), then delete the
-folder. no registry gunk, no leftover daemons, no hard feelings. 💔
+> just want quiet for a while? use the [mute button](#-make-it-yours) instead —
+> `python scripts/hook.py off` — and keep the install.
+
+one command. it removes the hooks from `~/.claude/settings.json` (only ours —
+your other settings and hooks are untouched, with a fresh `settings.json.bak`
+saved first), shuts down the music daemon, and deletes the temp
+state/lock/heartbeat files. idempotent — run it twice, nothing breaks.
+
+| your machine | do this |
+|:---:|:---|
+| 🪟 windows | double-click **`uninstall.bat`** |
+| 🍎 macos / 🐧 linux | `bash uninstall.sh` |
+| 🐍 any | `python setup.py --uninstall` |
+
+then restart claude code and delete the folder. no registry gunk, no leftover
+daemons, no hard feelings. 💔
 
 ## ❓ faq
 

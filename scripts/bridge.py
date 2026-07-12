@@ -15,7 +15,9 @@ Endpoints (GET or POST):
     /pause   soft pause - resumable
     /stop    hard stop - stays silent until the next /play
     /quit    shut the player daemon down
-    /status  {"state": "...", "stopped": bool}
+    /off     temporary disable ("enabled": false in config.json)
+    /on      re-enable after /off
+    /status  {"state": "...", "stopped": bool, "enabled": bool}
 
 Security posture:
     * Binds 127.0.0.1 only - never reachable from the network.
@@ -33,7 +35,7 @@ import hook
 
 HOST = "127.0.0.1"
 DEFAULT_PORT = 48765
-ACTIONS = ("play", "resume", "pause", "stop", "quit")
+ACTIONS = ("play", "resume", "pause", "stop", "quit", "on", "off")
 ALLOWED_WEB_ORIGINS = ("https://claude.ai",)
 
 
@@ -101,7 +103,14 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 {"service": "lethimcook-bridge", "endpoints": list(ACTIONS) + ["status"]},
             )
         elif action == "status":
-            self._send_json(200, {"state": read_state(), "stopped": hook.stop_flag_set()})
+            self._send_json(
+                200,
+                {
+                    "state": read_state(),
+                    "stopped": hook.stop_flag_set(),
+                    "enabled": hook.music_enabled(),
+                },
+            )
         elif action in ACTIONS:
             hook.main(action)
             self._send_json(200, {"ok": True, "action": action})
