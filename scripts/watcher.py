@@ -208,7 +208,9 @@ def request_stop():
 
 
 def _stop_requested():
-    return os.path.exists(STOP_FILE)
+    # Exit on an explicit stop request OR when lethimcook is deactivated
+    # (the master switch removed) - a dormant system must run no daemons.
+    return os.path.exists(STOP_FILE) or not hook.is_active()
 
 
 def watch(root, should_stop=_stop_requested, emit=emit, start_at_end=True,

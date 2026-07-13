@@ -184,6 +184,8 @@ class EmitIntegrationTests(unittest.TestCase):
         hook.STOP_FLAG_FILE = os.path.join(self.tmp, "stopped")
         hook.USER_PAUSE_FILE = os.path.join(self.tmp, "userpause")
         hook.CONFIG_FILE = os.path.join(self.tmp, "config.json")
+        hook.ACTIVE_MARKER = os.path.join(self.tmp, "active")
+        hook.activate()  # tests run with the master switch ON
         hook.spawn_player = lambda: None
         hook.ensure_bridge_alive = lambda: None
         hook.ensure_watcher_alive = lambda: None
@@ -216,6 +218,8 @@ class LifecycleTests(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="lethimcook-watch-life-")
         watcher.HEARTBEAT_FILE = os.path.join(self.tmp, "wh")
         watcher.STOP_FILE = os.path.join(self.tmp, "ws")
+        hook.ACTIVE_MARKER = os.path.join(self.tmp, "active")
+        hook.activate()  # active, so the loop exits via the stop flag not the switch
 
     def test_is_running_reflects_heartbeat_freshness(self):
         self.assertFalse(watcher.is_running())

@@ -136,8 +136,8 @@ live in the terminal but hate memorizing commands? there's a menu card:
 
   [1] play          [4] mute / unmute
   [2] pause         [5] volume
-  [3] quit daemon   [6] refresh
-  [q] leave the kitchen
+  [3] refresh
+  [q] quit lethimcook  (full stop - re-run setup.bat to use it again)
 ```
 
 | your machine | do this |
@@ -146,9 +146,14 @@ live in the terminal but hate memorizing commands? there's a menu card:
 | 🍎 macos / 🐧 linux | `bash menu.sh` |
 | 🐍 any | `python scripts/menu.py` |
 
-**pause and quit here are sticky**: claude code hooks can *never* restart the
-music behind your back — only your own `[1] play` does. same goes for the
-`pause`/`quit` commands below.
+**`[q]` is a real OFF switch.** it doesn't just close the menu — it fully
+**deactivates** lethimcook: the music stops, the background daemons shut down,
+and *every hook goes dormant* so nothing plays again until you run **`setup.bat`**
+(or `setup.sh`). that's the "I quit and it should STAY quit" button. (just want
+to close the window and keep it running? press Ctrl+C or close the terminal.)
+
+**pause** is the lighter touch — it sticks through stray mid-turn events, but
+your next query brings the music back.
 
 <sub>everything below still works from the command line — the panel and the
 menu just call the same actions.</sub>

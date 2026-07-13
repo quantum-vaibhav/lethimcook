@@ -47,6 +47,8 @@ class TempPathsMixin(unittest.TestCase):
             mod.STOP_FLAG_FILE = os.path.join(self.tmp, "stopped")
             mod.USER_PAUSE_FILE = os.path.join(self.tmp, "userpause")
             mod.CONFIG_FILE = os.path.join(self.tmp, "config.json")
+        hook.ACTIVE_MARKER = os.path.join(self.tmp, "active")
+        hook.activate()  # tests run with the master switch ON
         player.LOCK_FILE = os.path.join(self.tmp, "lock")
         player.SONG = os.path.join(self.tmp, "song.mp3")
         with open(player.SONG, "w") as f:

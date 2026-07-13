@@ -213,6 +213,15 @@ def ensure_bridge_running():
     print("    (Claude Code restarts it automatically if it's ever not running.)")
 
 
+def activate_switch():
+    step("Activating lethimcook...")
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import hook
+
+    hook.activate()
+    print("    Master switch ON. (Quit from the menu to fully stop it.)")
+
+
 def ensure_watcher_running():
     step("Starting the Cowork watcher...")
     sys.path.insert(0, os.path.join(ROOT, "scripts"))
@@ -278,6 +287,7 @@ def stop_daemon_and_clean():
         hook.HEARTBEAT_FILE,
         hook.STOP_FLAG_FILE,
         hook.USER_PAUSE_FILE,
+        hook.ACTIVE_MARKER,  # master switch OFF
         player.LOCK_FILE,
         watcher.HEARTBEAT_FILE,
         watcher.STOP_FILE,
@@ -321,6 +331,7 @@ def main():
     ensure_pygame()
     ensure_song()
     install_hooks()
+    activate_switch()  # flip the master ON switch before starting daemons
     ensure_bridge_running()
     ensure_watcher_running()
     print("\n" + "=" * 50)

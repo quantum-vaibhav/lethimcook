@@ -30,9 +30,12 @@ class MenuTestBase(unittest.TestCase):
         hook.STOP_FLAG_FILE = os.path.join(self.tmp, "stopped")
         hook.USER_PAUSE_FILE = os.path.join(self.tmp, "userpause")
         hook.CONFIG_FILE = os.path.join(self.tmp, "config.json")
+        hook.ACTIVE_MARKER = os.path.join(self.tmp, "active")
+        hook.activate()  # tests run with the master switch ON
         hook.spawn_player = lambda: None
         hook.ensure_bridge_alive = lambda: None
         hook.ensure_watcher_alive = lambda: None
+        hook._stop_background_helpers = lambda: None  # no real daemon/network
         setup.SONG = os.path.join(self.tmp, "song.mp3")
         setup.claude_settings_path = lambda: os.path.join(self.tmp, "settings.json")
 
@@ -55,16 +58,22 @@ class HandleTests(MenuTestBase):
     def test_pause_choice_sets_sticky_latch(self):
         menu.handle("1")
         feedback = menu.handle("2")
-        self.assertIn("until YOU", feedback)
+        self.assertIn("starts it again", feedback)
         self.assertEqual(self.read_state(), "pause")
         self.assertTrue(hook.user_paused())
-        hook.main("resume")  # a hook firing right after must change nothing
+        hook.main("resume")  # a stray mid-turn hook must change nothing
         self.assertEqual(self.read_state(), "pause")
 
-    def test_quit_choice_sets_sticky_latch(self):
-        menu.handle("3")
-        self.assertEqual(self.read_state(), "quit")
-        self.assertTrue(hook.user_paused())
+    def test_deactivate_stops_and_gates_everything(self):
+        # `q` in the menu calls deactivate(); afterwards the whole system is
+        # off and menu actions no-op with a "run setup" nudge.
+        menu.handle("1")
+        controls.deactivate()
+        self.assertFalse(hook.is_active())
+        self.assertEqual(self.read_state(), "quit")  # player told to exit
+        feedback = menu.handle("1")  # try to play while off
+        self.assertIn("OFF", feedback)
+        self.assertNotEqual(self.read_state(), "play")
 
     def test_mute_toggle_roundtrip(self):
         self.assertIn("muted", menu.handle("4"))
@@ -85,7 +94,7 @@ class HandleTests(MenuTestBase):
         self.assertIn("unknown", menu.handle("9"))
 
     def test_refresh_is_silent(self):
-        self.assertIsNone(menu.handle("6"))
+        self.assertIsNone(menu.handle("3"))
         self.assertIsNone(menu.handle(""))
 
     def test_clean_strips_bom_whitespace_and_case(self):

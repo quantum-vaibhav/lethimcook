@@ -7,3 +7,6 @@ __pycache__/
 
 # claude code local state
 .claude/settings.local.json
+
+# lethimcook master ON/OFF switch (per-machine runtime state)
+.lethimcook-active

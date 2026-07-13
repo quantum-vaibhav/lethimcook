@@ -77,6 +77,8 @@ class TempFilesMixin(unittest.TestCase):
             mod.STOP_FLAG_FILE = os.path.join(self.tmp, "stopped")
             mod.USER_PAUSE_FILE = os.path.join(self.tmp, "userpause")
             mod.CONFIG_FILE = os.path.join(self.tmp, "config.json")
+        hook.ACTIVE_MARKER = os.path.join(self.tmp, "active")
+        hook.activate()  # tests run with the master switch ON
         player.LOCK_FILE = os.path.join(self.tmp, "lock")
         player.SONG = os.path.join(self.tmp, "song.mp3")
         with open(player.SONG, "w") as f:
@@ -86,6 +88,7 @@ class TempFilesMixin(unittest.TestCase):
         self.bridge_calls = []
         hook.ensure_bridge_alive = lambda: self.bridge_calls.append(1)
         hook.ensure_watcher_alive = lambda: None  # never spawn a real watcher
+        hook._stop_background_helpers = lambda: None
 
     def read_state(self):
         try:
@@ -193,6 +196,40 @@ class UserPauseLatchTests(TempFilesMixin):
     def test_wait_does_not_set_the_latch(self):
         hook.main("wait")  # Notification pause is soft, not a manual pause
         self.assertFalse(hook.user_paused())
+
+
+class MasterSwitchTests(TempFilesMixin):
+    """`deactivate` must make the WHOLE system dormant until re-activated -
+    the 'I quit but the music came back' bug. Only `activate` (setup) revives."""
+
+    def setUp(self):
+        super().setUp()
+        self.spawns = []
+        hook.spawn_player = lambda: self.spawns.append(1)
+
+    def test_deactivate_gates_all_hooks_and_commands(self):
+        hook.main("deactivate")
+        self.assertFalse(hook.is_active())
+        self.spawns.clear()
+        for action in ("prompt", "resume", "play", "pause", "wait", "on", "off"):
+            hook.main(action)
+        # nothing plays and nothing is spawned while deactivated
+        self.assertEqual(self.spawns, [])
+        self.assertNotEqual(self.read_state(), "play")
+
+    def test_activate_revives_the_system(self):
+        hook.main("deactivate")
+        hook.main("prompt")  # ignored while off
+        self.assertNotEqual(self.read_state(), "play")
+        hook.main("activate")  # this is what setup.bat does
+        self.assertTrue(hook.is_active())
+        hook.main("prompt")  # now it works again
+        self.assertEqual(self.read_state(), "play")
+
+    def test_deactivate_tells_player_to_quit(self):
+        hook.main("prompt")
+        hook.main("deactivate")
+        self.assertEqual(self.read_state(), "quit")
 
 
 class DaemonTests(TempFilesMixin):

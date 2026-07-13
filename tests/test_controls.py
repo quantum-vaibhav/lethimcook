@@ -30,6 +30,8 @@ class ControlsTestBase(unittest.TestCase):
         hook.STOP_FLAG_FILE = os.path.join(self.tmp, "stopped")
         hook.USER_PAUSE_FILE = os.path.join(self.tmp, "userpause")
         hook.CONFIG_FILE = os.path.join(self.tmp, "config.json")
+        hook.ACTIVE_MARKER = os.path.join(self.tmp, "active")
+        hook.activate()  # tests run with the master switch ON
         hook.spawn_player = lambda: None  # never launch a real daemon
         hook.ensure_bridge_alive = lambda: None  # no self-spawning in tests
         hook.ensure_watcher_alive = lambda: None

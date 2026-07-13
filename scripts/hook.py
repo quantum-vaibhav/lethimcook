@@ -49,6 +49,54 @@ PROJECT_ROOT = os.path.normpath(
 CONFIG_FILE = os.path.join(PROJECT_ROOT, "config.json")
 DEFAULT_CONFIG = {"volume": 100, "enabled": True}
 
+# Master ON/OFF switch. This persistent marker file is the difference between
+# "installed" and "actually running": setup.py creates it, and quitting from
+# the menu (or `hook.py deactivate`) removes it. While it's absent EVERY hook
+# and command is a no-op — no music, no daemons — until the next setup. This
+# is what makes "quit" actually stay quit across sessions and reboots.
+ACTIVE_MARKER = os.path.join(PROJECT_ROOT, ".lethimcook-active")
+
+
+def is_active():
+    return os.path.exists(ACTIVE_MARKER)
+
+
+def activate():
+    with open(ACTIVE_MARKER, "w") as f:
+        f.write(str(time.time()))
+
+
+def _stop_background_helpers():
+    """Best-effort shutdown of the cowork watcher and the bridge.
+
+    The missing marker also makes each self-exit, but ask them directly for
+    speed. Isolated into its own function so tests can stub the real
+    process/network side effects.
+    """
+    try:
+        import watcher
+        watcher.request_stop()
+    except Exception:
+        pass
+    try:
+        import bridge
+        from urllib.request import Request, urlopen
+        urlopen(Request("http://127.0.0.1:%d/shutdown" % bridge.DEFAULT_PORT, method="POST"), timeout=2)
+    except Exception:
+        pass
+
+
+def deactivate():
+    """Full stop: remove the switch and shut every background piece down."""
+    try:
+        os.remove(ACTIVE_MARKER)
+    except OSError:
+        pass
+    clear_user_pause()
+    clear_stop_flag()
+    write_state("quit")  # the player daemon exits on this
+    _stop_background_helpers()
+
 
 def load_config():
     try:
@@ -164,6 +212,18 @@ def ensure_watcher_alive():
 def main(action=None):
     if action is None:
         action = sys.argv[1] if len(sys.argv) > 1 else "pause"
+
+    # Master switch. `activate` (run by setup) turns the whole system on;
+    # `deactivate` turns it fully off. While off, everything else is a
+    # no-op, so hooks can fire all day and nothing plays or spawns.
+    if action == "activate":
+        activate()
+        return
+    if action == "deactivate":
+        deactivate()
+        return
+    if not is_active():
+        return  # deactivated -> dormant until the next setup
 
     if action == "off":
         set_enabled(False)

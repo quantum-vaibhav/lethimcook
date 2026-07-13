@@ -28,12 +28,15 @@ import controls  # noqa: E402
 
 def describe(status):
     """One ASCII status line for the menu header."""
+    if not status.get("active", True):
+        head = "OFF (deactivated) - run setup.bat to turn it back on"
+        return head
     if not status["installed"]:
         head = "not installed (run setup)"
     elif not status["enabled"]:
         head = "muted (config enabled=false)"
     elif status["user_paused"]:
-        head = "paused by you (only [1] play resumes)"
+        head = "paused by you (a new query or [1] play resumes)"
     elif status["playing"]:
         head = "playing"
     elif status["running"]:
@@ -53,8 +56,8 @@ MENU = """
 
   [1] play          [4] mute / unmute
   [2] pause         [5] volume
-  [3] quit daemon   [6] refresh
-  [q] leave the kitchen
+  [3] refresh
+  [q] quit lethimcook  (full stop - re-run setup.bat to use it again)
 """
 
 
@@ -73,15 +76,18 @@ def clean(raw):
 
 def handle(choice, read=input):
     """Execute one menu choice; returns a feedback line (or None)."""
+    if choice in ("3", ""):
+        return None  # refresh: the loop reprints the status anyway
+    # Everything below actually drives the music, which only works while
+    # lethimcook is active. If it's been quit, point the user at setup.
+    if not controls.is_active():
+        return "lethimcook is OFF - run setup.bat to turn it back on"
     if choice == "1":
         controls.play()
         return "cooking - music on"
     if choice == "2":
         controls.pause()
-        return "paused - stays paused until YOU press play"
-    if choice == "3":
-        controls.quit_daemon()
-        return "daemon told to quit - stays quiet until YOU press play"
+        return "paused - a new query (or [1] play) starts it again"
     if choice == "4":
         enabled = controls.get_status()["enabled"]
         controls.set_enabled(not enabled)
@@ -93,9 +99,7 @@ def handle(choice, read=input):
         except ValueError:
             return "that's not a number"
         return "volume set to %d%%" % controls.set_volume(volume)
-    if choice in ("6", ""):
-        return None  # the loop reprints the status anyway
-    return "unknown choice - pick 1-6 or q"
+    return "unknown choice - pick 1-5 or q"
 
 
 def main():
@@ -104,9 +108,13 @@ def main():
         try:
             choice = clean(input("  > "))
         except (EOFError, KeyboardInterrupt):
+            # Closing the window / Ctrl+C just leaves lethimcook running.
             print()
             break
         if choice == "q":
+            controls.deactivate()
+            print("  -> lethimcook fully stopped. run setup.bat (or setup.sh)")
+            print("     to use the music and menu again.")
             break
         feedback = handle(choice)
         if feedback:
