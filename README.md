@@ -103,6 +103,11 @@ hooks fire async and out of order, so a straggler `PostToolUse` used to sneak in
 *after* `Stop` and un-pause the music. now `Stop`/`SessionEnd` drop a hard-stop
 flag that mutes every resume attempt — only your next prompt lifts it.
 
+and one more guard: a **manual** pause/quit (CLI, menu, control panel) drops a
+user latch so stray *mid-turn* events can't sneak the music back on. your next
+real prompt (or an explicit `play`) clears it — a fresh query means you're
+cooking again. for a durable off, use the mute toggle instead.
+
 </details>
 
 ## 🖱️ prefer buttons? the control panel
@@ -120,8 +125,33 @@ it polls the daemon once a second, so the buttons always show what the music
 is *actually* doing — even if a Claude Code session or the CLI changed it.
 built on plain tkinter (ships with python), so there's nothing extra to install.
 
-<sub>everything below still works from the command line — the panel just calls
-the same actions.</sub>
+## 🧾 or the terminal menu (no window, no commands)
+
+live in the terminal but hate memorizing commands? there's a menu card:
+
+```
+  lethimcook - kitchen controls
+  -----------------------------
+  status: playing | volume 100%
+
+  [1] play          [4] mute / unmute
+  [2] pause         [5] volume
+  [3] quit daemon   [6] refresh
+  [q] leave the kitchen
+```
+
+| your machine | do this |
+|:---:|:---|
+| 🪟 windows | double-click **`menu.bat`** |
+| 🍎 macos / 🐧 linux | `bash menu.sh` |
+| 🐍 any | `python scripts/menu.py` |
+
+**pause and quit here are sticky**: claude code hooks can *never* restart the
+music behind your back — only your own `[1] play` does. same goes for the
+`pause`/`quit` commands below.
+
+<sub>everything below still works from the command line — the panel and the
+menu just call the same actions.</sub>
 
 ## 🎛️ make it yours
 
@@ -150,47 +180,65 @@ python scripts/hook.py on     # soundtrack back on at the next prompt
 <sub>editing `"enabled"` in `config.json` by hand does the same thing —
 the player checks it live, just like volume.</sub>
 
+**pause / play** — a manual pause *sticks through the rest of the current
+turn*: stray mid-turn events (a tool finishing, etc.) will **not** sneak the
+music back on. your next **new prompt** — or an explicit `play` — starts it
+again, because a fresh query means you're back to cooking:
+
+```bash
+python scripts/hook.py pause   # silent for the rest of this turn
+python scripts/hook.py play    # start again right now
+```
+
+<sub>want it off *durably*, across new prompts? that's the [mute button](#-make-it-yours)
+(`hook.py off`) — pause is only meant to be momentary.</sub>
+
 **panic button** — music stuck? get him out of the kitchen:
 
 ```bash
 python scripts/hook.py quit
 ```
 
-## 🌐 beyond claude code (cowork & web chat)
+## 🖥️ claude desktop: code, cowork & chat
 
-the daemon doesn't care who's cooking — `player.py` is a shared audio engine,
-and anything that can hit a localhost endpoint can drive it.
+claude desktop has three modes, and they don't all work the same way under the
+hood. `player.py` is one shared audio engine; what differs is how each mode
+tells us "the assistant is working."
 
-| surface | how it's wired | status |
+| desktop mode | how we detect it | status |
 |---|---|:---:|
-| 🖥️ claude code | lifecycle hooks (`setup.py` installs them) | ✅ automatic |
-| 🤝 cowork (claude desktop) | same harness, same `~/.claude/settings.json` hooks | ✅ automatic* |
-| 💬 claude.ai web chat | userscript + local bridge (below) | ✅ automatic |
-| 🧩 anything else | call the bridge yourself (`curl` counts) | 🎛️ manual |
+| 🧑‍💻 code | lifecycle hooks (`setup.py` installs them) | ✅ automatic |
+| 🤝 cowork | watches cowork's `audit.jsonl` turn events | ✅ automatic |
+| 💬 chat | *(embedded web app — no local signal)* | ❌ not supported |
 
-<sub>*cowork runs on the claude code harness and reads the same settings file,
-so the normal setup covers it. if your cowork build doesn't fire hooks, use
-the bridge below as the fallback.</sub>
+**code** — the original path. real lifecycle hooks in `~/.claude/settings.json`,
+instant and precise. nothing to do beyond `setup.py`.
 
-**the bridge** — a tiny localhost-only http server (stdlib, zero deps) that
-translates requests into the exact same play/pause actions the hooks use:
+**cowork** — cowork runs a sandboxed agent that does **not** fire our hooks, so
+that path is useless here. but every cowork turn is written live to an
+`audit.jsonl` using the Claude Agent SDK message schema — a `user` line starts
+a turn, `assistant` lines continue it, and a `result` line ends it. a small
+**watcher daemon** (`scripts/watcher.py`) tails that file and drives the same
+player: new turn → play, `result` → pause. `setup.py` starts it, and a
+code-mode prompt re-spawns it if it ever dies. it also checks that Claude
+Desktop is actually running, so when you close (or force-quit) the app the
+music stops and the watcher bows out — no music starting out of nowhere from an
+orphaned process. a mid-turn manual pause still sticks.
 
 ```bash
-python scripts/bridge.py        # listens on http://127.0.0.1:48765
+python scripts/watcher.py        # only if you want to run it by hand
 ```
 
-endpoints: `/play` `/resume` `/pause` `/stop` `/quit` `/on` `/off` `/status`
-— same semantics as the hooks (`/stop` is a hard stop: nothing resumes until
-the next `/play`; `/off` and `/on` flip the temporary-disable toggle). it binds `127.0.0.1` only and answers web pages only if they
-come from `claude.ai`, so neither your network nor random websites can
-mess with your music.
+**chat** — claude desktop's chat tab is the claude.ai web app embedded in the
+app. it doesn't fire hooks and doesn't write a readable "generating" signal to
+disk (only an internal binary database, updated after the fact). there's no
+reliable local hook to grab onto, so chat mode is **not supported** — rather
+than ship something that starts/stops randomly, we left it out. if you know of
+a signal chat exposes, an issue/PR is very welcome.
 
-**web chat** — install [`extras/claude-chat.user.js`](extras/claude-chat.user.js)
-in tampermonkey/violentmonkey, start the bridge, open claude.ai. the script
-watches the streaming indicator: claude starts generating → music plays;
-response finishes → hard stop. that's the whole wiring.
-
-**manual mode** — no hooks, no userscript, no problem:
+**anything else** — there's also a tiny localhost bridge (`scripts/bridge.py`,
+stdlib, zero deps) exposing the same verbs (`/play` `/pause` `/stop` `/status`
+…) if you want to drive the music from your own scripts:
 
 ```bash
 curl -X POST http://127.0.0.1:48765/play    # let him cook

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         lethimcook — thinking music for claude.ai
 // @namespace    lethimcook
-// @version      1.0.0
+// @version      1.1.0
 // @description  Plays your thinking song while Claude is generating in the claude.ai web chat. Needs the local bridge running: python scripts/bridge.py
 // @match        https://claude.ai/*
 // @grant        none
@@ -11,14 +11,21 @@
 (function () {
   "use strict";
 
+  // Diagnosis marker: run `window.__lethimcook` in DevTools to confirm the
+  // userscript is actually installed and running on this page.
+  window.__lethimcook = "1.1.0";
+
   var BRIDGE = "http://127.0.0.1:48765";
   var POLL_MS = 500;
 
   // claude.ai renders a "stop generating" control only while a response is
-  // streaming — its presence is the "assistant is cooking" signal.
+  // streaming — its presence is the "assistant is cooking" signal. Ordered
+  // precise-first; the last entry is a broad fallback in case the exact
+  // aria-label/testid drifts with a UI update.
   var GENERATING_SELECTORS = [
     'button[aria-label="Stop response"]',
     '[data-testid="stop-button"]',
+    'button[aria-label*="stop" i]',
   ];
 
   // Starts false so an idle page sends nothing on load (and never pauses
@@ -54,7 +61,9 @@
     var now = isGenerating();
     if (now !== generating) {
       generating = now;
-      send(now ? "play" : "stop");
+      // "prompt" (not "play"): surface-driven starts must never override a
+      // manual pause the user made via the CLI/menu/GUI.
+      send(now ? "prompt" : "stop");
     }
   }, POLL_MS);
 })();

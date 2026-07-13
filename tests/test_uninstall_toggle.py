@@ -45,6 +45,7 @@ class TempPathsMixin(unittest.TestCase):
             mod.STATE_FILE = os.path.join(self.tmp, "state")
             mod.HEARTBEAT_FILE = os.path.join(self.tmp, "heartbeat")
             mod.STOP_FLAG_FILE = os.path.join(self.tmp, "stopped")
+            mod.USER_PAUSE_FILE = os.path.join(self.tmp, "userpause")
             mod.CONFIG_FILE = os.path.join(self.tmp, "config.json")
         player.LOCK_FILE = os.path.join(self.tmp, "lock")
         player.SONG = os.path.join(self.tmp, "song.mp3")
@@ -53,6 +54,8 @@ class TempPathsMixin(unittest.TestCase):
 
         self.spawns = []
         hook.spawn_player = lambda: self.spawns.append(1)
+        hook.ensure_bridge_alive = lambda: None  # no self-spawning in tests
+        hook.ensure_watcher_alive = lambda: None
 
     def read_state(self):
         try:
@@ -204,11 +207,18 @@ class UninstallTests(TempPathsMixin):
         setup.remove_hooks()  # missing file: no error
 
     def test_stop_daemon_and_clean_removes_temp_files(self):
-        for path in (hook.STATE_FILE, hook.HEARTBEAT_FILE, hook.STOP_FLAG_FILE, player.LOCK_FILE):
+        temp_files = (
+            hook.STATE_FILE,
+            hook.HEARTBEAT_FILE,
+            hook.STOP_FLAG_FILE,
+            hook.USER_PAUSE_FILE,
+            player.LOCK_FILE,
+        )
+        for path in temp_files:
             with open(path, "w") as f:
                 f.write("x")
         setup.stop_daemon_and_clean()
-        for path in (hook.STATE_FILE, hook.HEARTBEAT_FILE, hook.STOP_FLAG_FILE, player.LOCK_FILE):
+        for path in temp_files:
             self.assertFalse(os.path.exists(path), path)
 
 

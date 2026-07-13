@@ -158,11 +158,11 @@ def install_hooks():
     strip_our_hooks(hooks)
 
     events = {
-        "UserPromptSubmit": "play",     # prompt sent -> Claude starts thinking (lifts hard stop)
-        "PostToolUse": "resume",        # resume after tool ran - suppressed after a hard stop
+        "UserPromptSubmit": "prompt",   # prompt sent -> thinking (lifts hard stop, NOT manual pause)
+        "PostToolUse": "resume",        # resume after tool ran - suppressed by hard stop / manual pause
         "PostToolUseFailure": "resume", # resume after a failed tool - Claude keeps thinking
         "PermissionDenied": "resume",   # resume after user denies - Claude keeps thinking
-        "Notification": "pause",        # Claude is waiting for the user (resumable)
+        "Notification": "wait",         # Claude is waiting for the user (soft pause, resumable)
         "Stop": "stop",                 # turn finished/interrupted - hard stop until next prompt
         "SessionEnd": "stop",           # session closed - hard stop until next prompt
     }
@@ -200,6 +200,62 @@ def remove_hooks():
     print("    Hooks removed. Everything else in your settings is untouched.")
 
 
+def ensure_bridge_running():
+    step("Starting the local bridge (for web chat)...")
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import bridge
+
+    if bridge.is_running():
+        print("    Bridge already running on http://127.0.0.1:%d" % bridge.DEFAULT_PORT)
+    else:
+        bridge.spawn_bridge()
+        print("    Bridge started on http://127.0.0.1:%d" % bridge.DEFAULT_PORT)
+    print("    (Claude Code restarts it automatically if it's ever not running.)")
+
+
+def ensure_watcher_running():
+    step("Starting the Cowork watcher...")
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import watcher
+
+    if watcher.cowork_sessions_root() is None:
+        print("    No Cowork session store found - skipping (Claude Desktop not detected).")
+        return
+    if watcher.is_running():
+        print("    Cowork watcher already running.")
+    else:
+        watcher.spawn_watcher()
+        print("    Cowork watcher started (music follows Cowork turns).")
+    print("    (Claude Code restarts it automatically if it's ever not running.)")
+
+
+def stop_bridge():
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import bridge
+
+    if not bridge.is_running():
+        return
+    try:
+        from urllib.request import Request, urlopen
+        urlopen(Request("http://127.0.0.1:%d/shutdown" % bridge.DEFAULT_PORT, method="POST"), timeout=2)
+        print("    Bridge stopped.")
+    except OSError:
+        pass  # nothing reachable - nothing to report
+
+
+def stop_watcher():
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import watcher
+
+    if not watcher.is_running():
+        return
+    watcher.request_stop()
+    deadline = time.time() + DAEMON_EXIT_TIMEOUT
+    while time.time() < deadline and watcher.is_running():
+        time.sleep(0.1)
+    print("    Cowork watcher stopped.")
+
+
 def stop_daemon_and_clean():
     step("Stopping the music daemon and cleaning temp files...")
     sys.path.insert(0, os.path.join(ROOT, "scripts"))
@@ -212,8 +268,20 @@ def stop_daemon_and_clean():
         while time.time() < deadline and os.path.exists(hook.HEARTBEAT_FILE):
             time.sleep(0.1)
 
+    stop_bridge()
+    stop_watcher()
+
+    import watcher
     leftovers = 0
-    for path in (hook.STATE_FILE, hook.HEARTBEAT_FILE, hook.STOP_FLAG_FILE, player.LOCK_FILE):
+    for path in (
+        hook.STATE_FILE,
+        hook.HEARTBEAT_FILE,
+        hook.STOP_FLAG_FILE,
+        hook.USER_PAUSE_FILE,
+        player.LOCK_FILE,
+        watcher.HEARTBEAT_FILE,
+        watcher.STOP_FILE,
+    ):
         try:
             os.remove(path)
             leftovers += 1
@@ -253,6 +321,8 @@ def main():
     ensure_pygame()
     ensure_song()
     install_hooks()
+    ensure_bridge_running()
+    ensure_watcher_running()
     print("\n" + "=" * 50)
     print("Done! Restart Claude Code to activate the hooks.")
     print("Music starts when Claude is thinking, pauses when it")
