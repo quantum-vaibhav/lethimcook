@@ -14,11 +14,16 @@ import threading
 import time
 import types
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 
 import hook
 import player
+
+# Captured before any test's setUp() monkeypatches hook.ensure_bridge_alive,
+# so tests can still exercise the real function's own error handling.
+_REAL_ENSURE_BRIDGE_ALIVE = hook.ensure_bridge_alive
 
 
 class FakeMusic:
@@ -70,13 +75,20 @@ class TempFilesMixin(unittest.TestCase):
             mod.STATE_FILE = os.path.join(self.tmp, "state")
             mod.HEARTBEAT_FILE = os.path.join(self.tmp, "heartbeat")
             mod.STOP_FLAG_FILE = os.path.join(self.tmp, "stopped")
+            mod.USER_PAUSE_FILE = os.path.join(self.tmp, "userpause")
             mod.CONFIG_FILE = os.path.join(self.tmp, "config.json")
+        hook.ACTIVE_MARKER = os.path.join(self.tmp, "active")
+        hook.activate()  # tests run with the master switch ON
         player.LOCK_FILE = os.path.join(self.tmp, "lock")
         player.SONG = os.path.join(self.tmp, "song.mp3")
         with open(player.SONG, "w") as f:
             f.write("not a real mp3")
-        # Hook tests must never launch a real daemon.
+        # Hook tests must never launch a real daemon or touch the network.
         hook.spawn_player = lambda: None
+        self.bridge_calls = []
+        hook.ensure_bridge_alive = lambda: self.bridge_calls.append(1)
+        hook.ensure_watcher_alive = lambda: None  # never spawn a real watcher
+        hook._stop_background_helpers = lambda: None
 
     def read_state(self):
         try:
@@ -101,15 +113,123 @@ class HookStateTests(TempFilesMixin):
 
     def test_user_prompt_lifts_hard_stop(self):
         hook.main("stop")
-        hook.main("play")  # UserPromptSubmit
+        hook.main("prompt")  # UserPromptSubmit
         self.assertEqual(self.read_state(), "play")
         self.assertFalse(hook.stop_flag_set())
 
-    def test_resume_without_stop_plays(self):
-        hook.main("play")
-        hook.main("pause")   # Notification: waiting on permission
+    def test_prompt_and_play_ensure_bridge_alive(self):
+        hook.main("prompt")  # UserPromptSubmit
+        hook.main("play")    # explicit user play
+        self.assertEqual(len(self.bridge_calls), 2)
+
+    def test_mid_turn_resume_does_not_touch_bridge(self):
+        hook.main("prompt")
+        hook.main("resume")  # PostToolUse etc. - not a fresh prompt
+        self.assertEqual(len(self.bridge_calls), 1)  # only the initial prompt
+
+    def test_other_actions_never_touch_bridge(self):
+        for action in ("pause", "wait", "stop", "quit", "off", "on"):
+            hook.main(action)
+        self.assertEqual(self.bridge_calls, [])
+
+    def test_ensure_bridge_alive_swallows_import_errors(self):
+        # Exercise the REAL function (not the mixin's tracking stub) to
+        # prove its own try/except protects hook.py if bridge.py is
+        # missing/broken - this must never take the hook down with it.
+        real_import = __import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "bridge":
+                raise ImportError("no bridge module")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            _REAL_ENSURE_BRIDGE_ALIVE()  # must not raise
+
+    def test_resume_after_notification_wait_plays(self):
+        hook.main("prompt")
+        hook.main("wait")    # Notification: waiting on permission (soft)
         hook.main("resume")  # PostToolUse: permission approved
         self.assertEqual(self.read_state(), "play")
+
+
+class UserPauseLatchTests(TempFilesMixin):
+    """A manual pause/quit must survive stray MID-TURN `resume` events (the
+    'random play 2-3 seconds after I paused' bug), but a genuine new user
+    `prompt` is explicit intent to resume and DOES start the music again."""
+
+    def setUp(self):
+        super().setUp()
+        self.spawns = []
+        hook.spawn_player = lambda: self.spawns.append(1)
+
+    def test_manual_pause_survives_resume(self):
+        hook.main("prompt")
+        hook.main("pause")   # user typed it / pressed the menu button
+        hook.main("resume")  # PostToolUse fires 2 seconds later...
+        self.assertEqual(self.read_state(), "pause")  # ...and changes nothing
+
+    def test_new_prompt_resumes_after_manual_pause(self):
+        # Bug fix: a fresh query must auto-play, not stay stuck on pause.
+        hook.main("pause")
+        hook.main("prompt")  # user sends a new query
+        self.assertEqual(self.read_state(), "play")
+        self.assertFalse(hook.user_paused())
+
+    def test_quit_survives_resume_but_next_prompt_resumes(self):
+        hook.main("prompt")
+        hook.main("quit")
+        self.spawns.clear()
+        hook.main("resume")  # stray mid-turn event must NOT respawn
+        self.assertNotEqual(self.read_state(), "play")
+        self.assertEqual(self.spawns, [])
+        hook.main("prompt")  # but a real new query resumes
+        self.assertEqual(self.read_state(), "play")
+
+    def test_explicit_play_lifts_manual_pause(self):
+        hook.main("pause")
+        hook.main("play")  # explicit resume
+        self.assertEqual(self.read_state(), "play")
+        self.assertFalse(hook.user_paused())
+        self.assertEqual(len(self.spawns), 1)
+
+    def test_wait_does_not_set_the_latch(self):
+        hook.main("wait")  # Notification pause is soft, not a manual pause
+        self.assertFalse(hook.user_paused())
+
+
+class MasterSwitchTests(TempFilesMixin):
+    """`deactivate` must make the WHOLE system dormant until re-activated -
+    the 'I quit but the music came back' bug. Only `activate` (setup) revives."""
+
+    def setUp(self):
+        super().setUp()
+        self.spawns = []
+        hook.spawn_player = lambda: self.spawns.append(1)
+
+    def test_deactivate_gates_all_hooks_and_commands(self):
+        hook.main("deactivate")
+        self.assertFalse(hook.is_active())
+        self.spawns.clear()
+        for action in ("prompt", "resume", "play", "pause", "wait", "on", "off"):
+            hook.main(action)
+        # nothing plays and nothing is spawned while deactivated
+        self.assertEqual(self.spawns, [])
+        self.assertNotEqual(self.read_state(), "play")
+
+    def test_activate_revives_the_system(self):
+        hook.main("deactivate")
+        hook.main("prompt")  # ignored while off
+        self.assertNotEqual(self.read_state(), "play")
+        hook.main("activate")  # this is what setup.bat does
+        self.assertTrue(hook.is_active())
+        hook.main("prompt")  # now it works again
+        self.assertEqual(self.read_state(), "play")
+
+    def test_deactivate_tells_player_to_quit(self):
+        hook.main("prompt")
+        hook.main("deactivate")
+        self.assertEqual(self.read_state(), "quit")
 
 
 class DaemonTests(TempFilesMixin):
@@ -145,6 +265,23 @@ class DaemonTests(TempFilesMixin):
         self.assertEqual(self.music.state, "paused")
 
         # Next real user prompt lifts the stop and music resumes.
+        hook.main("prompt")
+        self.assertTrue(wait_for(lambda: self.music.state == "playing"))
+
+    def test_user_pause_latch_beats_stray_play_in_daemon(self):
+        hook.main("play")
+        self.assertTrue(wait_for(lambda: self.music.state == "playing"))
+
+        hook.main("pause")  # manual pause: sets the latch
+        self.assertTrue(wait_for(lambda: self.music.state == "paused"))
+
+        # Race: something writes a raw "play" while the latch is set.
+        # The daemon itself must refuse to resume.
+        self.write_state("play")
+        time.sleep(player.POLL_SECONDS * 10)
+        self.assertEqual(self.music.state, "paused")
+
+        # Only the user's explicit play resumes.
         hook.main("play")
         self.assertTrue(wait_for(lambda: self.music.state == "playing"))
 

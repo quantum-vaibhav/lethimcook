@@ -78,15 +78,28 @@ def get_status():
     running = hook.heartbeat_fresh()
     state = _read_state()
     enabled = hook.music_enabled()
+    user_paused = hook.user_paused()
+    active = hook.is_active()
     return {
         "running": running,
         "state": state,
         "enabled": enabled,
-        "playing": running and state == "play" and enabled,
+        "user_paused": user_paused,
+        "active": active,
+        "playing": active and running and state == "play" and enabled and not user_paused,
         "volume": get_volume(),
         "song": song_present(),
         "installed": is_installed(),
     }
+
+
+def is_active():
+    return hook.is_active()
+
+
+def deactivate():
+    """Full OFF switch: stop everything until the next setup."""
+    hook.main("deactivate")
 
 
 # --- playback (in-process, instant) --------------------------------------

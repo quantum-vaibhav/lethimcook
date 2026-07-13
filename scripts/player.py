@@ -28,6 +28,7 @@ STATE_FILE = os.path.join(TMP, "claude-thinking-song.state")
 HEARTBEAT_FILE = os.path.join(TMP, "claude-thinking-song.heartbeat")
 LOCK_FILE = os.path.join(TMP, "claude-thinking-song.lock")
 STOP_FLAG_FILE = os.path.join(TMP, "claude-thinking-song.stopped")
+USER_PAUSE_FILE = os.path.join(TMP, "claude-thinking-song.userpause")
 
 PROJECT_ROOT = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -87,6 +88,10 @@ def stop_flag_set():
     return os.path.exists(STOP_FLAG_FILE)
 
 
+def user_paused():
+    return os.path.exists(USER_PAUSE_FILE)
+
+
 def acquire_lock():
     for _ in range(2):
         try:
@@ -144,11 +149,12 @@ def main():
             if state == "quit":
                 break
 
-            # Hard-stop flag overrides state: hooks are async, so a stray
-            # `play` can be written after a stop — never resume past it.
-            # The config "enabled" flag applies live, like volume, so
-            # `hook.py off` (or editing config.json) silences within a poll.
-            if state == "play" and enabled and not stop_flag_set():
+            # Hard-stop flag and the manual user-pause latch override state:
+            # hooks are async, so a stray `play` can be written after a stop
+            # or a manual pause — never resume past either. The config
+            # "enabled" flag applies live, like volume, so `hook.py off`
+            # (or editing config.json) silences within a poll.
+            if state == "play" and enabled and not stop_flag_set() and not user_paused():
                 if not started:
                     pygame.mixer.music.play(loops=-1)  # play full, loop on finish
                     started = True
